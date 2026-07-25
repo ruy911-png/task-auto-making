@@ -1,0 +1,101 @@
+<title>ERP 모집단 자동 추출 도구</title>
+<link rel="stylesheet" href="/static/style.css" />
+
+<h1>ERP 모집단 자동 추출 도구</h1>
+<p class="subtitle">SAP 세션에 로그인한 상태에서 사용하세요. 새 업무는 통제 등록에서 추가합니다.</p>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="register">통제 등록</button>
+  <button class="tab-btn" data-tab="run">실행</button>
+</div>
+
+<!-- ================= 통제 등록 ================= -->
+<section id="panel-register" class="panel active">
+  <fieldset>
+    <legend>기본 정보</legend>
+    <label>통제 ID (영문/숫자, 예: ap_invoice_check)</label>
+    <input type="text" id="control_id" />
+    <label>설명</label>
+    <input type="text" id="description" />
+    <label>SAP 거래코드 (트랜잭션 코드)</label>
+    <input type="text" id="transaction" />
+    <label>실행 방법 (기본값 "enter", 또는 버튼 컴포넌트 id)</label>
+    <input type="text" id="execute_action" value="enter" />
+  </fieldset>
+
+  <fieldset>
+    <legend>조회 화면 필드 매핑 (조건 컬럼명 → SAP 필드 id)</legend>
+    <div id="field-mapping-rows"></div>
+    <button type="button" class="small" onclick="addRow('field-mapping-rows', ['조건 컬럼명', 'SAP 필드 id'])">+ 매핑 추가</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>다운로드 절차 (SAP 엑셀 다운로드 메뉴)</legend>
+    <label>메뉴 항목 id 목록 (쉼표로 구분, 클릭 순서대로)</label>
+    <input type="text" id="menu_path" placeholder="wnd[0]/mbar/menu[0]/menu[1], ..." />
+    <label>파일 경로 입력 필드 id (선택)</label>
+    <input type="text" id="file_path_field_id" />
+    <label>확인 버튼 id (선택)</label>
+    <input type="text" id="confirm_button_id" />
+  </fieldset>
+
+  <fieldset>
+    <legend>편집 규칙</legend>
+    <label>컬럼 이름변경 (원본 → 새이름)</label>
+    <div id="rename-rows"></div>
+    <button type="button" class="small" onclick="addRow('rename-rows', ['원본 컬럼명', '새 이름'])">+ 이름변경 추가</button>
+
+    <label>삭제할 컬럼 (쉼표로 구분)</label>
+    <input type="text" id="drop_columns" />
+
+    <label>필터 (컬럼 / 연산자 / 값)</label>
+    <div id="filter-rows"></div>
+    <button type="button" class="small" onclick="addRow('filter-rows', ['컬럼', '연산자(==,!=,>,>=,<,<=)', '값'])">+ 필터 추가</button>
+
+    <label>계산 컬럼 (이름 / 연산(add,subtract,multiply,divide,concat) / 대상컬럼(쉼표) / 구분자(concat only)))</label>
+    <div id="calc-rows"></div>
+    <button type="button" class="small" onclick="addRow('calc-rows', ['새 컬럼명', '연산', '대상컬럼(쉼표)', '구분자'])">+ 계산컬럼 추가</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>검증</legend>
+    <label>중복 판정 키 컬럼 (쉼표로 구분)</label>
+    <input type="text" id="key_columns" />
+    <label>담당자 식별값이 들어있는 원본 컬럼명 (사번/이름/아이디 중 하나가 들어있음)</label>
+    <input type="text" id="responsible_column" />
+    <label>금액 컬럼 (선택, 합계 검증용)</label>
+    <input type="text" id="amount_column" />
+  </fieldset>
+
+  <button class="primary" onclick="registerControl()">등록 저장</button>
+  <div id="register-status" class="status-box" style="display:none;"></div>
+</section>
+
+<!-- ================= 실행 ================= -->
+<section id="panel-run" class="panel">
+  <fieldset>
+    <legend>실행 설정</legend>
+    <label>통제 선택</label>
+    <select id="run_control_id"></select>
+
+    <label>SAP 세션 선택</label>
+    <select id="run_session_id"></select>
+    <div class="hint" id="session-hint"></div>
+
+    <label>조건 엑셀 업로드 (여러 행)</label>
+    <input type="file" id="condition_file" accept=".xlsx" />
+
+    <label>인사데이터 엑셀 업로드</label>
+    <input type="file" id="hr_file" accept=".xlsx" />
+  </fieldset>
+
+  <button class="primary" id="run-btn" onclick="startRun()">실행</button>
+
+  <div id="run-status" class="status-box" style="display:none;"></div>
+  <div class="actions" id="run-actions" style="display:none;">
+    <button class="small" onclick="downloadResult()">결과 다운로드</button>
+    <button class="small" onclick="retryFailed()">실패 건만 재처리</button>
+  </div>
+</section>
+
+<script src="/static/app.js"></script>

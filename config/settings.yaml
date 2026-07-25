@@ -1,0 +1,5 @@
+# 프로젝트 전역 설정.
+# GCP 연동(후순위 단계)에서 사용할 값들을 위한 자리 - 이번 범위에서는 채우지 않는다.
+gcp:
+  project_id: null
+  bucket_name: null

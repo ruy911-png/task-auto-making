@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# runtime data / user files - never commit real extraction output or HR data
+/data/
+*.xlsx
+!tests/fixtures/*.xlsx
+job_state*.json
+*.log
+
+# local settings that may contain machine-specific paths
+config/settings.local.yaml

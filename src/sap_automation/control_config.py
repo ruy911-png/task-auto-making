@@ -1,0 +1,90 @@
+"""통제(RPA 대상 업무) 스키마 정의 및 YAML 입출력.
+
+하나의 "통제"는 조회(SAP 필드 매핑) + 다운로드(절차) + 편집(컬럼정리/필터/계산컬럼) +
+검증(키컬럼/금액컬럼) 스키마를 하나의 YAML로 표현한다. 신규 통제를 추가할 때는
+이 파일 하나만 추가하면 되고, 코드를 수정할 필요가 없다 (웹 등록 화면이 이 YAML을
+자동 생성한다).
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+@dataclass
+class SapQuerySchema:
+    transaction: str
+    fields: dict[str, str] = field(default_factory=dict)
+    """조건 엑셀의 컬럼명 -> SAP 화면 필드 컴포넌트 id 매핑."""
+    execute_action: str = "enter"
+    """"enter" 또는 특정 버튼의 컴포넌트 id (예: "wnd[0]/tbar[1]/btn[8]")."""
+
+
+@dataclass
+class DownloadSchema:
+    menu_path: list[str] = field(default_factory=list)
+    """SAP 엑셀 다운로드(스프레드시트 내보내기) 메뉴 항목 id를 누르는 순서."""
+    file_path_field_id: str | None = None
+    """파일 저장 대화상자의 경로 입력 필드 id (있는 경우)."""
+    confirm_button_id: str | None = None
+    """파일 저장 대화상자의 확인 버튼 id (있는 경우)."""
+    file_name_pattern: str = "{control_id}_{run_id}.xlsx"
+
+
+@dataclass
+class ControlConfig:
+    control_id: str
+    description: str
+    sap: SapQuerySchema
+    download: DownloadSchema = field(default_factory=DownloadSchema)
+    edit_rules: dict[str, Any] = field(default_factory=dict)
+    """rename_columns / drop_columns / filters / calculated_columns 지원 (excel_io.edit_rules 참고)."""
+    validation: dict[str, Any] = field(default_factory=dict)
+    """key_columns / amount_column 등 (validation.checks 참고)."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "control_id": self.control_id,
+            "description": self.description,
+            "sap": asdict(self.sap),
+            "download": asdict(self.download),
+            "edit_rules": self.edit_rules,
+            "validation": self.validation,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "ControlConfig":
+        return cls(
+            control_id=d["control_id"],
+            description=d.get("description", ""),
+            sap=SapQuerySchema(**d["sap"]),
+            download=DownloadSchema(**d.get("download", {})),
+            edit_rules=d.get("edit_rules", {}) or {},
+            validation=d.get("validation", {}) or {},
+        )
+
+
+def save(config: ControlConfig, directory: str | Path) -> Path:
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{config.control_id}.yaml"
+    path.write_text(
+        yaml.safe_dump(config.to_dict(), allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return path
+
+
+def load(path: str | Path) -> ControlConfig:
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    return ControlConfig.from_dict(data)
+
+
+def load_all(directory: str | Path) -> list[ControlConfig]:
+    directory = Path(directory)
+    if not directory.exists():
+        return []
+    return [load(p) for p in sorted(directory.glob("*.yaml"))]
