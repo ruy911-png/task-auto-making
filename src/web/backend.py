@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from batch.runner import BatchState, retry_failed, run_batch
 from excel_io import reader, writer
 from excel_io.edit_rules import apply_edit_rules
+from lookup import reference_matcher
 from lookup.hr_matcher import match_rows
 from sap_automation import control_config, session_picker, transaction_runner
 from sap_automation.control_config import (
@@ -29,6 +30,7 @@ from sap_automation.control_config import (
     ControlConfig,
     DownloadSchema,
     LayoutSchema,
+    MatchingSchema,
     SapQuerySchema,
 )
 from validation.checks import EXCEPTION_REASON_COLUMN, classify_rows
@@ -80,6 +82,7 @@ def create_control(payload: dict[str, Any]) -> dict[str, Any]:
             additional_screen=AdditionalScreenSchema(**payload.get("additional_screen", {})),
             edit_rules=payload.get("edit_rules", {}),
             validation=payload.get("validation", {}),
+            matching=MatchingSchema(**payload.get("matching", {})),
         )
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"필수 항목 누락: {exc}") from exc
@@ -118,18 +121,32 @@ async def start_run(
     control_id: str = Form(...),
     session_id: str = Form(...),
     condition_file: UploadFile = File(...),
-    hr_file: UploadFile = File(...),
+    hr_file: UploadFile | None = File(None),
+    reference_file: UploadFile | None = File(None),
 ) -> dict[str, Any]:
     config = control_config.load(CONFIG_DIR / f"{control_id}.yaml")
+
+    if config.matching.method == "sap_lookup":
+        raise HTTPException(
+            status_code=400,
+            detail="SAP 보조조회 담당자 매칭 방식은 아직 구현되지 않았습니다.",
+        )
 
     job_id = uuid.uuid4().hex[:12]
     job_dir = JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
     condition_path = job_dir / "conditions.xlsx"
-    hr_path = job_dir / "hr_data.xlsx"
     _save_upload(condition_file, condition_path)
-    _save_upload(hr_file, hr_path)
+
+    if config.matching.method == "reference_upload":
+        if reference_file is None:
+            raise HTTPException(status_code=400, detail="이 통제는 참조 엑셀 업로드가 필요합니다.")
+        _save_upload(reference_file, job_dir / "reference.xlsx")
+    else:
+        if hr_file is None:
+            raise HTTPException(status_code=400, detail="이 통제는 인사데이터 엑셀 업로드가 필요합니다.")
+        _save_upload(hr_file, job_dir / "hr_data.xlsx")
 
     conditions = reader.read_conditions(condition_path)
 
@@ -259,10 +276,22 @@ def _finalize_result(config: ControlConfig, state: BatchState, job_dir: Path) ->
                 {"__조건__": label, EXCEPTION_REASON_COLUMN: "조회실패", "오류": item.error}
             )
 
-    responsible_column = config.validation.get("responsible_column")
-    if responsible_column:
-        hr_records = reader.read_hr_data(job_dir / "hr_data.xlsx")
-        all_rows = match_rows(all_rows, hr_records, responsible_column)
+    if config.matching.method == "reference_upload":
+        reference_rows = reader.read_conditions(job_dir / "reference.xlsx")
+        all_rows = reference_matcher.match_rows(
+            all_rows,
+            reference_rows,
+            match_column=config.matching.match_column,
+            reference_key_column=config.matching.reference_key_column
+            or config.matching.match_column,
+            name_column=config.matching.reference_name_column,
+            department_column=config.matching.reference_department_column,
+        )
+    else:
+        responsible_column = config.validation.get("responsible_column")
+        if responsible_column:
+            hr_records = reader.read_hr_data(job_dir / "hr_data.xlsx")
+            all_rows = match_rows(all_rows, hr_records, responsible_column)
 
     key_columns = config.validation.get("key_columns", [])
     population_rows, exception_rows = classify_rows(all_rows, key_columns)

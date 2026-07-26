@@ -69,6 +69,30 @@ class LayoutSchema:
     """레이아웃 선택 확인 버튼의 컴포넌트 id."""
 
 
+MATCHING_METHODS = ("hr_data", "reference_upload", "sap_lookup")
+
+
+@dataclass
+class MatchingSchema:
+    """담당자 확인 방식 (통제별로 3가지 중 선택).
+
+    - "hr_data": 인사데이터 엑셀 매칭 (사번→이름→아이디 순차, 기본값).
+      validation.responsible_column을 사용한다.
+    - "reference_upload": 별도 참조 엑셀 업로드 매칭 (SAP 미접촉, XLOOKUP 방식).
+    - "sap_lookup": SAP 보조조회 — 설계 확정, 아직 미구현.
+    """
+
+    method: str = "hr_data"
+    match_column: str | None = None
+    """method가 "reference_upload"일 때: 조회 결과 행에서 매칭 키로 쓸 컬럼명(예: "전표번호")."""
+    reference_key_column: str | None = None
+    """참조 엑셀에서 매칭 키가 들어있는 컬럼명 (헤더명이 다를 수 있어 match_column과 분리)."""
+    reference_name_column: str = "담당자"
+    """참조 엑셀에서 담당자명이 들어있는 컬럼명."""
+    reference_department_column: str | None = "담당부서"
+    """참조 엑셀에서 담당부서가 들어있는 컬럼명 (없으면 None)."""
+
+
 @dataclass
 class ControlConfig:
     control_id: str
@@ -81,6 +105,7 @@ class ControlConfig:
     """rename_columns / drop_columns / filters / calculated_columns 지원 (excel_io.edit_rules 참고)."""
     validation: dict[str, Any] = field(default_factory=dict)
     """key_columns / amount_column 등 (validation.checks 참고)."""
+    matching: MatchingSchema = field(default_factory=MatchingSchema)
     # 표본추출은 실행 시점 모집단 건수 하나로만 결정된다(validation.sampling 참고) —
     # 통제별 설정이 필요 없어 여기 별도 스키마를 두지 않는다.
 
@@ -94,6 +119,7 @@ class ControlConfig:
             "additional_screen": asdict(self.additional_screen),
             "edit_rules": self.edit_rules,
             "validation": self.validation,
+            "matching": asdict(self.matching),
         }
 
     @classmethod
@@ -107,6 +133,7 @@ class ControlConfig:
             additional_screen=AdditionalScreenSchema(**d.get("additional_screen", {})),
             edit_rules=d.get("edit_rules", {}) or {},
             validation=d.get("validation", {}) or {},
+            matching=MatchingSchema(**d.get("matching", {})),
         )
 
 

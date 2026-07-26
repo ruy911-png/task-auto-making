@@ -1,4 +1,5 @@
 from excel_io.schema import HRRecord
+from lookup import reference_matcher
 from lookup.hr_matcher import build_index, match, match_rows
 
 
@@ -44,3 +45,47 @@ def test_match_rows_adds_columns():
     assert enriched[0]["담당자명"] == "홍길동"
     assert enriched[0]["담당부서"] == "회계팀"
     assert enriched[1]["담당자명"] is None
+
+
+# ---- reference_matcher (별도 참조 엑셀 업로드 매칭) ----
+
+def _sample_reference():
+    return [
+        {"전표번호": "1900000123", "담당자": "박민수", "담당부서": "회계팀"},
+        {"전표번호": "1900000124", "담당자": "이영희", "담당부서": "재무팀"},
+    ]
+
+
+def test_reference_match_rows_adds_columns():
+    rows = [{"전표번호": "1900000123"}, {"전표번호": "없는번호"}]
+
+    enriched = reference_matcher.match_rows(
+        rows,
+        _sample_reference(),
+        match_column="전표번호",
+        reference_key_column="전표번호",
+        name_column="담당자",
+        department_column="담당부서",
+    )
+
+    assert enriched[0]["담당자명"] == "박민수"
+    assert enriched[0]["담당부서"] == "회계팀"
+    assert enriched[1]["담당자명"] is None
+    assert enriched[1]["담당부서"] is None
+
+
+def test_reference_match_rows_different_key_column_name():
+    # rows 쪽 컬럼명과 참조 엑셀 쪽 컬럼명이 다른 경우
+    rows = [{"문서번호": "1900000124"}]
+    reference = [{"전표번호": "1900000124", "담당자": "이영희"}]
+
+    enriched = reference_matcher.match_rows(
+        rows,
+        reference,
+        match_column="문서번호",
+        reference_key_column="전표번호",
+        name_column="담당자",
+    )
+
+    assert enriched[0]["담당자명"] == "이영희"
+    assert enriched[0]["담당부서"] is None  # department_column 미지정

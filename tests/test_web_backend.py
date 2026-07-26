@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 
 import openpyxl
 import pandas as pd
@@ -7,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from batch.runner import BatchState, ConditionResult, ConditionStatus
 from sap_automation.control_config import ControlConfig, SapQuerySchema
-from web.backend import _finalize_result, app
+from web.backend import _JOB_META, _finalize_result, app
 
 
 @pytest.fixture(autouse=True)
@@ -143,3 +144,82 @@ def test_finalize_result_excludes_failed_condition_from_population_and_sample(tm
     assert "조회실패" not in _sheet_text("모집단 data")
     assert "조회실패" not in _sheet_text("샘플 data")
     assert "조회실패" in _sheet_text("예외 data")
+
+
+def test_full_run_with_reference_upload_matching():
+    """담당자 매칭 방식을 "reference_upload"로 등록하면, hr_file 대신 reference_file로
+    전표번호 기준 매칭이 되어야 한다 (SAP/인사데이터 엑셀 전혀 접촉하지 않음)."""
+    payload = _sample_control_payload()
+    payload["matching"] = {
+        "method": "reference_upload",
+        "match_column": "전표번호",
+        "reference_key_column": "전표번호",
+        "reference_name_column": "담당자",
+        "reference_department_column": "담당부서",
+    }
+    client.post("/api/controls", json=payload)
+
+    condition_file = _excel_bytes(
+        [{"회사코드": "1000", "전표번호": "1900000123"}, {"회사코드": "1000", "전표번호": "9999999999"}]
+    )
+    reference_file = _excel_bytes(
+        [{"전표번호": "1900000123", "담당자": "박민수", "담당부서": "회계팀"}]
+    )
+
+    res = client.post(
+        "/api/runs",
+        data={"control_id": "test_control", "session_id": "__mock__"},
+        files={
+            "condition_file": ("conditions.xlsx", condition_file, "application/octet-stream"),
+            "reference_file": ("reference.xlsx", reference_file, "application/octet-stream"),
+        },
+    )
+    assert res.status_code == 200
+    job_id = res.json()["job_id"]
+
+    workbook = openpyxl.load_workbook(_result_path_for(job_id))
+    population_text = " ".join(
+        str(cell.value)
+        for row in workbook["모집단 data"].iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    assert "박민수" in population_text
+
+
+def _result_path_for(job_id: str) -> Path:
+    return Path(_JOB_META[job_id]["job_dir"]) / "result.xlsx"
+
+
+def test_run_without_reference_file_for_reference_upload_control_returns_400():
+    payload = _sample_control_payload()
+    payload["matching"] = {"method": "reference_upload", "match_column": "전표번호"}
+    client.post("/api/controls", json=payload)
+
+    condition_file = _excel_bytes([{"회사코드": "1000", "전표번호": "1900000123"}])
+
+    res = client.post(
+        "/api/runs",
+        data={"control_id": "test_control", "session_id": "__mock__"},
+        files={"condition_file": ("conditions.xlsx", condition_file, "application/octet-stream")},
+    )
+    assert res.status_code == 400
+
+
+def test_run_with_sap_lookup_method_returns_400():
+    payload = _sample_control_payload()
+    payload["matching"] = {"method": "sap_lookup"}
+    client.post("/api/controls", json=payload)
+
+    condition_file = _excel_bytes([{"회사코드": "1000"}])
+    hr_file = _excel_bytes([{"사번": "EMP001", "이름": "홍길동", "아이디": "hong1", "부서": "회계팀"}])
+
+    res = client.post(
+        "/api/runs",
+        data={"control_id": "test_control", "session_id": "__mock__"},
+        files={
+            "condition_file": ("conditions.xlsx", condition_file, "application/octet-stream"),
+            "hr_file": ("hr.xlsx", hr_file, "application/octet-stream"),
+        },
+    )
+    assert res.status_code == 400
