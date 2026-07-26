@@ -52,23 +52,6 @@ class LayoutSchema:
     """레이아웃 선택 확인 버튼의 컴포넌트 id."""
 
 
-PERIODIC_CYCLES = ("annual", "quarterly", "monthly", "weekly", "daily")
-
-
-@dataclass
-class SamplingSchema:
-    """표본 수 산정 기준 (내부회계관리제도 모범규준 적용 FAQ 기준, 위험도 상단 적용).
-
-    control_type이 "periodic"이면 cycle(연간/분기/월별/주별/일별)로 표본 수가 정해지고,
-    "event_driven"이면 실행 시점의 모집단 건수로 표본 수가 정해진다.
-    """
-
-    control_type: str = "event_driven"
-    """"periodic"(주기적 통제) 또는 "event_driven"(수시/비주기적 통제)."""
-    cycle: str | None = None
-    """control_type이 "periodic"일 때만 사용: annual/quarterly/monthly/weekly/daily."""
-
-
 @dataclass
 class ControlConfig:
     control_id: str
@@ -80,7 +63,8 @@ class ControlConfig:
     """rename_columns / drop_columns / filters / calculated_columns 지원 (excel_io.edit_rules 참고)."""
     validation: dict[str, Any] = field(default_factory=dict)
     """key_columns / amount_column 등 (validation.checks 참고)."""
-    sampling: SamplingSchema = field(default_factory=SamplingSchema)
+    # 표본추출은 실행 시점 모집단 건수 하나로만 결정된다(validation.sampling 참고) —
+    # 통제별 설정이 필요 없어 여기 별도 스키마를 두지 않는다.
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -91,7 +75,6 @@ class ControlConfig:
             "layout": asdict(self.layout),
             "edit_rules": self.edit_rules,
             "validation": self.validation,
-            "sampling": asdict(self.sampling),
         }
 
     @classmethod
@@ -104,7 +87,6 @@ class ControlConfig:
             layout=LayoutSchema(**d.get("layout", {})),
             edit_rules=d.get("edit_rules", {}) or {},
             validation=d.get("validation", {}) or {},
-            sampling=SamplingSchema(**d.get("sampling", {})),
         )
 
 

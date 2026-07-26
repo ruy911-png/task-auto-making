@@ -28,7 +28,6 @@ from sap_automation.control_config import (
     ControlConfig,
     DownloadSchema,
     LayoutSchema,
-    SamplingSchema,
     SapQuerySchema,
 )
 from validation.checks import EXCEPTION_REASON_COLUMN, classify_rows
@@ -79,7 +78,6 @@ def create_control(payload: dict[str, Any]) -> dict[str, Any]:
             layout=LayoutSchema(**payload.get("layout", {})),
             edit_rules=payload.get("edit_rules", {}),
             validation=payload.get("validation", {}),
-            sampling=SamplingSchema(**payload.get("sampling", {})),
         )
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"필수 항목 누락: {exc}") from exc
@@ -229,21 +227,8 @@ def _make_mock_execute_fn(config: ControlConfig):
     return execute
 
 
-_CYCLE_LABELS = {
-    "annual": "연간",
-    "quarterly": "분기별",
-    "monthly": "월별",
-    "weekly": "주별",
-    "daily": "일별",
-}
-
-
-def _build_sampling_note(sampling: SamplingSchema, sample_size: int, population_count: int) -> str:
-    if sampling.control_type == "periodic":
-        basis = f"{_CYCLE_LABELS.get(sampling.cycle, sampling.cycle or '')} 통제"
-    else:
-        basis = f"모집단 {population_count}건 기준"
-    return f"{basis} 위험도 최대치 적용 {sample_size}건"
+def _build_sampling_note(sample_size: int, population_count: int) -> str:
+    return f"모집단 {population_count}건 기준 위험도 최대치 적용 {sample_size}건"
 
 
 def _finalize_result(config: ControlConfig, state: BatchState, job_dir: Path) -> None:
@@ -281,11 +266,9 @@ def _finalize_result(config: ControlConfig, state: BatchState, job_dir: Path) ->
     population_rows, exception_rows = classify_rows(all_rows, key_columns)
     exception_rows = exception_rows + failed_condition_rows
 
-    sample_size = determine_sample_size(
-        config.sampling.control_type, config.sampling.cycle, len(population_rows)
-    )
+    sample_size = determine_sample_size(len(population_rows))
     sample_rows = select_sample(population_rows, sample_size)
-    sampling_note = _build_sampling_note(config.sampling, sample_size, len(population_rows))
+    sampling_note = _build_sampling_note(sample_size, len(population_rows))
 
     writer.write_result_excel(
         job_dir / "result.xlsx",
