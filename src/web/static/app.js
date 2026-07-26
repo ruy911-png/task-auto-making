@@ -10,6 +10,17 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
   });
 });
 
+document.querySelectorAll('input[name="matching_method"]').forEach((radio) => {
+  radio.addEventListener("change", updateMatchingDetailVisibility);
+});
+
+function updateMatchingDetailVisibility() {
+  const method = document.querySelector('input[name="matching_method"]:checked').value;
+  document.querySelectorAll(".matching-detail").forEach((el) => {
+    el.style.display = el.id === `matching-${method}` ? "block" : "none";
+  });
+}
+
 function addRow(containerId, placeholders) {
   const container = document.getElementById(containerId);
   const row = document.createElement("div");
@@ -42,10 +53,33 @@ function splitCsv(value) {
     .filter((v) => v.length > 0);
 }
 
+function buildMatchingPayload() {
+  const method = document.querySelector('input[name="matching_method"]:checked').value;
+  if (method === "hr_data") {
+    return { method };
+  }
+  if (method === "reference_upload") {
+    return {
+      method,
+      match_column: document.getElementById("match_column").value.trim() || null,
+      reference_key_column: document.getElementById("reference_key_column").value.trim() || null,
+      reference_name_column: document.getElementById("reference_name_column").value.trim() || "담당자",
+      reference_department_column:
+        document.getElementById("reference_department_column").value.trim() || null,
+    };
+  }
+  return { method: "sap_lookup" };
+}
+
 async function registerControl() {
   const fields = {};
   rowsToPairs("field-mapping-rows").forEach(([col, sapId]) => {
     if (col && sapId) fields[col] = sapId;
+  });
+
+  const additionalFields = {};
+  rowsToPairs("additional-field-rows").forEach(([col, sapId]) => {
+    if (col && sapId) additionalFields[col] = sapId;
   });
 
   const rename_columns = {};
@@ -66,12 +100,25 @@ async function registerControl() {
       separator: sep || "",
     }));
 
+  const method = document.querySelector('input[name="matching_method"]:checked').value;
+
   const payload = {
     control_id: document.getElementById("control_id").value.trim(),
     description: document.getElementById("description").value.trim(),
     transaction: document.getElementById("transaction").value.trim(),
-    execute_action: document.getElementById("execute_action").value.trim() || "enter",
+    execute_action: "f8",
     fields,
+    additional_screen: {
+      open_button_id: document.getElementById("additional_open_button_id").value.trim() || null,
+      fields: additionalFields,
+      confirm_button_id: document.getElementById("additional_confirm_button_id").value.trim() || null,
+    },
+    layout: {
+      select_button_id: document.getElementById("layout_select_button_id").value.trim() || null,
+      layout_name: document.getElementById("layout_name").value.trim() || null,
+      layout_name_field_id: document.getElementById("layout_name_field_id").value.trim() || null,
+      confirm_button_id: document.getElementById("layout_confirm_button_id").value.trim() || null,
+    },
     download: {
       menu_path: splitCsv(document.getElementById("menu_path").value),
       file_path_field_id: document.getElementById("file_path_field_id").value.trim() || null,
@@ -85,9 +132,11 @@ async function registerControl() {
     },
     validation: {
       key_columns: splitCsv(document.getElementById("key_columns").value),
-      responsible_column: document.getElementById("responsible_column").value.trim() || null,
+      responsible_column:
+        method === "hr_data" ? document.getElementById("responsible_column").value.trim() || null : null,
       amount_column: document.getElementById("amount_column").value.trim() || null,
     },
+    matching: buildMatchingPayload(),
   };
 
   const statusBox = document.getElementById("register-status");
@@ -111,16 +160,20 @@ async function registerControl() {
   }
 }
 
+let loadedControls = [];
+
 async function loadRunPanel() {
   const controlSelect = document.getElementById("run_control_id");
   controlSelect.innerHTML = "";
-  const controls = await (await fetch("/api/controls")).json();
-  controls.forEach((c) => {
+  loadedControls = await (await fetch("/api/controls")).json();
+  loadedControls.forEach((c) => {
     const opt = document.createElement("option");
     opt.value = c.control_id;
     opt.textContent = `${c.control_id} - ${c.description || ""}`;
     controlSelect.appendChild(opt);
   });
+  controlSelect.onchange = updateRunFileInputs;
+  updateRunFileInputs();
 
   const sessionSelect = document.getElementById("run_session_id");
   sessionSelect.innerHTML = "";
@@ -145,27 +198,58 @@ async function loadRunPanel() {
   sessionSelect.appendChild(mockOpt);
 }
 
+function updateRunFileInputs() {
+  const controlId = document.getElementById("run_control_id").value;
+  const control = loadedControls.find((c) => c.control_id === controlId);
+  const method = control && control.matching ? control.matching.method : "hr_data";
+
+  document.getElementById("run-hr-file-row").style.display = method === "hr_data" ? "block" : "none";
+  document.getElementById("run-reference-file-row").style.display =
+    method === "reference_upload" ? "block" : "none";
+  document.getElementById("run-sap-lookup-notice").style.display =
+    method === "sap_lookup" ? "block" : "none";
+  document.getElementById("run-btn").disabled = method === "sap_lookup";
+}
+
 let currentJobId = null;
 
 async function startRun() {
+  const controlId = document.getElementById("run_control_id").value;
+  const control = loadedControls.find((c) => c.control_id === controlId);
+  const method = control && control.matching ? control.matching.method : "hr_data";
+
   const conditionFile = document.getElementById("condition_file").files[0];
   const hrFile = document.getElementById("hr_file").files[0];
+  const referenceFile = document.getElementById("reference_file").files[0];
   const statusBox = document.getElementById("run-status");
   const actions = document.getElementById("run-actions");
   actions.style.display = "none";
 
-  if (!conditionFile || !hrFile) {
+  if (!conditionFile) {
     statusBox.style.display = "block";
     statusBox.className = "status-box failed";
-    statusBox.textContent = "조건 엑셀과 인사데이터 엑셀을 모두 업로드하세요.";
+    statusBox.textContent = "조건 엑셀을 업로드하세요.";
+    return;
+  }
+  if (method === "hr_data" && !hrFile) {
+    statusBox.style.display = "block";
+    statusBox.className = "status-box failed";
+    statusBox.textContent = "인사데이터 엑셀을 업로드하세요.";
+    return;
+  }
+  if (method === "reference_upload" && !referenceFile) {
+    statusBox.style.display = "block";
+    statusBox.className = "status-box failed";
+    statusBox.textContent = "참조 엑셀을 업로드하세요.";
     return;
   }
 
   const form = new FormData();
-  form.append("control_id", document.getElementById("run_control_id").value);
+  form.append("control_id", controlId);
   form.append("session_id", document.getElementById("run_session_id").value);
   form.append("condition_file", conditionFile);
-  form.append("hr_file", hrFile);
+  if (method === "hr_data") form.append("hr_file", hrFile);
+  if (method === "reference_upload") form.append("reference_file", referenceFile);
 
   statusBox.style.display = "block";
   statusBox.className = "status-box";

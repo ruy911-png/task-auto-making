@@ -6,6 +6,7 @@
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="register">통제 등록</button>
+  <button class="tab-btn" data-tab="matching">담당자 매칭</button>
   <button class="tab-btn" data-tab="run">실행</button>
 </div>
 
@@ -19,18 +20,42 @@
     <input type="text" id="description" />
     <label>SAP 거래코드 (트랜잭션 코드)</label>
     <input type="text" id="transaction" />
-    <label>실행 방법 (기본값 "enter", 또는 버튼 컴포넌트 id)</label>
-    <input type="text" id="execute_action" value="enter" />
+    <div class="hint">조회 실행은 항상 F8입니다 (실사용 통제가 전부 F8이라 별도 설정 없음).</div>
   </fieldset>
 
   <fieldset>
-    <legend>조회 화면 필드 매핑 (조건 컬럼명 → SAP 필드 id)</legend>
+    <legend>① 조회조건 · 본 화면 필드 매핑 (조건 컬럼명 → SAP 필드 id)</legend>
     <div id="field-mapping-rows"></div>
     <button type="button" class="small" onclick="addRow('field-mapping-rows', ['조건 컬럼명', 'SAP 필드 id'])">+ 매핑 추가</button>
   </fieldset>
 
   <fieldset>
-    <legend>다운로드 절차 (SAP 엑셀 다운로드 메뉴)</legend>
+    <legend>② 추가 조회조건 팝업 <span class="badge optional">선택사항</span></legend>
+    <div class="hint">본 화면 입력 후 팝업을 열어 조건을 추가로 넣어야 하는 통제용 (예: FB03 전표 리스트 조회 시 Multiple Selection 아이콘으로 문서유형 추가). 열기 버튼 id를 비워두면 이 단계는 건너뜁니다.</div>
+    <label>팝업 여는 버튼 id</label>
+    <input type="text" id="additional_open_button_id" placeholder="wnd[0]/tbar[1]/btn[19]" />
+    <label>팝업 화면 필드 매핑 (조건 컬럼명 → 팝업 필드 id)</label>
+    <div id="additional-field-rows"></div>
+    <button type="button" class="small" onclick="addRow('additional-field-rows', ['조건 컬럼명', '팝업 화면 필드 id'])">+ 매핑 추가</button>
+    <label>확인/복귀 버튼 id</label>
+    <input type="text" id="additional_confirm_button_id" placeholder="wnd[1]/tbar[0]/btn[0]" />
+  </fieldset>
+
+  <fieldset>
+    <legend>③ 레이아웃 선택 <span class="badge optional">선택사항</span></legend>
+    <div class="hint">조회 실행 후, 엑셀 다운로드 전에 특정 레이아웃을 선택해야 하는 통제용. 여는 버튼 id를 비워두면 이 단계는 건너뜁니다.</div>
+    <label>레이아웃 선택 여는 버튼 id</label>
+    <input type="text" id="layout_select_button_id" />
+    <label>레이아웃 이름</label>
+    <input type="text" id="layout_name" />
+    <label>레이아웃 이름 입력 필드 id</label>
+    <input type="text" id="layout_name_field_id" />
+    <label>확인 버튼 id</label>
+    <input type="text" id="layout_confirm_button_id" />
+  </fieldset>
+
+  <fieldset>
+    <legend>④ 다운로드 절차 (SAP 엑셀 다운로드 메뉴)</legend>
     <label>메뉴 항목 id 목록 (쉼표로 구분, 클릭 순서대로)</label>
     <input type="text" id="menu_path" placeholder="wnd[0]/mbar/menu[0]/menu[1], ..." />
     <label>파일 경로 입력 필드 id (선택)</label>
@@ -61,14 +86,59 @@
     <legend>검증</legend>
     <label>중복 판정 키 컬럼 (쉼표로 구분)</label>
     <input type="text" id="key_columns" />
-    <label>담당자 식별값이 들어있는 원본 컬럼명 (사번/이름/아이디 중 하나가 들어있음)</label>
-    <input type="text" id="responsible_column" />
     <label>금액 컬럼 (선택, 합계 검증용)</label>
     <input type="text" id="amount_column" />
+    <div class="hint">담당자 확인 방식은 "담당자 매칭" 탭에서 설정합니다. 표본추출 기준은 별도 설정이 필요 없습니다 (실행 시점 모집단 건수로 자동 산정).</div>
   </fieldset>
 
   <button class="primary" onclick="registerControl()">등록 저장</button>
   <div id="register-status" class="status-box" style="display:none;"></div>
+</section>
+
+<!-- ================= 담당자 매칭 ================= -->
+<section id="panel-matching" class="panel">
+  <fieldset>
+    <legend>담당자 확인 방식</legend>
+    <div class="method-group" id="matching-method-group">
+      <label class="method-option">
+        <input type="radio" name="matching_method" value="hr_data" checked />
+        ① 인사데이터 매칭
+      </label>
+      <label class="method-option">
+        <input type="radio" name="matching_method" value="reference_upload" />
+        ② 별도 참조 엑셀 업로드 매칭
+      </label>
+      <label class="method-option">
+        <input type="radio" name="matching_method" value="sap_lookup" />
+        ③ SAP 보조조회
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset id="matching-hr_data" class="matching-detail">
+    <legend>① 인사데이터 매칭</legend>
+    <div class="hint">실행 시 인사데이터 엑셀(사번/이름/아이디/부서 컬럼)을 업로드합니다. 사번 → 이름 → 아이디 순으로 순차 매칭됩니다.</div>
+    <label>담당자 식별값이 들어있는 원본 컬럼명 (사번/이름/아이디 중 하나가 들어있음)</label>
+    <input type="text" id="responsible_column" />
+  </fieldset>
+
+  <fieldset id="matching-reference_upload" class="matching-detail" style="display:none;">
+    <legend>② 별도 참조 엑셀 업로드 매칭 <span class="badge safe">SAP 미접촉</span></legend>
+    <div class="hint">인사데이터에 담당자 정보가 바로 없는 통제용. 실행 시 전표번호 등의 키로 담당자를 찾을 수 있는 매핑 엑셀을 업로드합니다.</div>
+    <label>매칭 키 컬럼 (조회 결과 쪽 컬럼명, 예: 전표번호)</label>
+    <input type="text" id="match_column" placeholder="전표번호" />
+    <label>참조 엑셀의 매칭 키 컬럼명 (조회 결과 쪽과 헤더명이 다르면 입력)</label>
+    <input type="text" id="reference_key_column" placeholder="비워두면 매칭 키 컬럼과 동일" />
+    <label>참조 엑셀의 담당자명 컬럼명</label>
+    <input type="text" id="reference_name_column" value="담당자" />
+    <label>참조 엑셀의 담당부서 컬럼명 (선택)</label>
+    <input type="text" id="reference_department_column" value="담당부서" />
+  </fieldset>
+
+  <fieldset id="matching-sap_lookup" class="matching-detail" style="display:none;">
+    <legend>③ SAP 보조조회 <span class="badge pending">구현 예정</span></legend>
+    <div class="hint">전표번호 등을 키로 별도 SAP 트랜잭션을 추가 조회해 담당자를 찾는 방식입니다. 아직 구현되지 않아 이 방식을 선택한 통제는 실행할 수 없습니다.</div>
+  </fieldset>
 </section>
 
 <!-- ================= 실행 ================= -->
@@ -85,8 +155,19 @@
     <label>조건 엑셀 업로드 (여러 행)</label>
     <input type="file" id="condition_file" accept=".xlsx" />
 
-    <label>인사데이터 엑셀 업로드</label>
-    <input type="file" id="hr_file" accept=".xlsx" />
+    <div id="run-hr-file-row">
+      <label>인사데이터 엑셀 업로드</label>
+      <input type="file" id="hr_file" accept=".xlsx" />
+    </div>
+
+    <div id="run-reference-file-row" style="display:none;">
+      <label>참조 엑셀 업로드 (담당자 매핑표)</label>
+      <input type="file" id="reference_file" accept=".xlsx" />
+    </div>
+
+    <div id="run-sap-lookup-notice" class="status-box failed" style="display:none;">
+      이 통제는 담당자 확인 방식이 "SAP 보조조회"로 설정되어 있어 아직 실행할 수 없습니다. "담당자 매칭" 탭에서 다른 방식으로 바꿔주세요.
+    </div>
   </fieldset>
 
   <button class="primary" id="run-btn" onclick="startRun()">실행</button>
