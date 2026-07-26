@@ -6,7 +6,13 @@
 """
 from __future__ import annotations
 
-from sap_automation.control_config import ControlConfig, DownloadSchema, LayoutSchema, SapQuerySchema
+from sap_automation.control_config import (
+    AdditionalScreenSchema,
+    ControlConfig,
+    DownloadSchema,
+    LayoutSchema,
+    SapQuerySchema,
+)
 from sap_automation.transaction_runner import _execute, run_condition
 
 
@@ -52,7 +58,7 @@ class FakeSapSession:
         return self._components[component_id]
 
 
-def _make_config(**layout_kwargs) -> ControlConfig:
+def _make_config(additional_screen_kwargs=None, **layout_kwargs) -> ControlConfig:
     return ControlConfig(
         control_id="ctrl1",
         description="test control",
@@ -67,6 +73,7 @@ def _make_config(**layout_kwargs) -> ControlConfig:
             confirm_button_id="wnd[1]/tbar[0]/btn[0]",
         ),
         layout=LayoutSchema(**layout_kwargs),
+        additional_screen=AdditionalScreenSchema(**(additional_screen_kwargs or {})),
     )
 
 
@@ -114,6 +121,46 @@ def test_run_condition_selects_layout_in_order_when_configured():
     confirm_press_count = sum(
         1 for call in session.calls if call == ("press", "wnd[1]/tbar[0]/btn[0]")
     )
+    assert confirm_press_count >= 1
+
+
+def test_run_condition_skips_additional_screen_when_no_open_button_id():
+    session = FakeSapSession()
+    config = _make_config()  # additional_screen 기본값(None) -> 스킵
+
+    run_condition(session, config, {"col_a": "value1"}, download_dir="/tmp/does-not-matter")
+
+    assert "wnd[0]/tbar[1]/btn[19]" not in session.found_ids
+
+
+def test_run_condition_fills_additional_screen_in_order_when_configured():
+    session = FakeSapSession()
+    config = _make_config(
+        additional_screen_kwargs=dict(
+            open_button_id="wnd[0]/tbar[1]/btn[19]",
+            fields={"문서유형": "wnd[1]/usr/ctxtDOC_TYPE"},
+            confirm_button_id="wnd[1]/tbar[0]/btn[0]",
+        )
+    )
+
+    run_condition(
+        session,
+        config,
+        {"col_a": "value1", "문서유형": "RE"},
+        download_dir="/tmp/does-not-matter",
+    )
+
+    # 본 화면 필드 입력 -> 팝업 열기 -> 팝업 필드 입력 순서로 기록되어야 한다.
+    main_field_idx = session.calls.index(("text", "wnd[0]/usr/ctxtFIELD_A", "value1"))
+    open_idx = session.calls.index(("press", "wnd[0]/tbar[1]/btn[19]"))
+    popup_field_idx = session.calls.index(("text", "wnd[1]/usr/ctxtDOC_TYPE", "RE"))
+
+    assert main_field_idx < open_idx < popup_field_idx
+
+    confirm_press_count = sum(
+        1 for call in session.calls if call == ("press", "wnd[1]/tbar[0]/btn[0]")
+    )
+    # 팝업 확인 + 다운로드 확인(테스트 설정상 같은 id) 최소 1번 이상
     assert confirm_press_count >= 1
 
 

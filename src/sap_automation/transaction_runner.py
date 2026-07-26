@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from .control_config import ControlConfig, DownloadSchema, LayoutSchema
+from .control_config import AdditionalScreenSchema, ControlConfig, DownloadSchema, LayoutSchema
 
 
 class SapSession(Protocol):
@@ -34,8 +34,8 @@ def run_condition(
     download_dir: str | Path,
     capture_fn: CaptureFn | None = None,
 ) -> dict[str, Any]:
-    """조회 조건 하나를 실행한다: 트랜잭션 이동 -> 필드 입력 -> 조회조건 캡처 -> 실행
-    -> 결과 캡처 -> SAP 엑셀 다운로드.
+    """조회 조건 하나를 실행한다: 트랜잭션 이동 -> 필드 입력 -> (있으면) 추가화면 팝업
+    입력 -> 조회조건 캡처 -> 실행 -> 결과 캡처 -> SAP 엑셀 다운로드.
 
     capture_fn: 라벨을 받아 캡처 파일 경로(str)를 반환하는 함수. 실제 환경에서는
     `sap_automation.capture.capture_window`를 감싸서 주입하고, SAP가 없는 테스트/CI
@@ -43,6 +43,7 @@ def run_condition(
     """
     _start_transaction(session, config.sap.transaction)
     _fill_fields(session, config.sap.fields, condition)
+    _fill_additional_screen(session, config.additional_screen, condition)
 
     condition_capture = capture_fn(f"{config.control_id}_condition") if capture_fn else None
 
@@ -83,6 +84,24 @@ def _fill_fields(
             continue
         component = session.find_by_id(sap_field_id)
         component.text = str(value)
+
+
+def _fill_additional_screen(
+    session: SapSession, schema: AdditionalScreenSchema, condition: dict[str, Any]
+) -> None:
+    """본 화면 입력 후, 통제별로 지정된 팝업(추가 조회조건)을 열어 필드를 추가 입력한다
+    (예: FB03의 Multiple Selection 아이콘으로 문서유형 추가).
+
+    open_button_id가 없으면 추가화면이 필요 없는 통제이므로 아무것도 하지 않는다.
+    """
+    if not schema.open_button_id:
+        return
+
+    session.find_by_id(schema.open_button_id).press()
+    _fill_fields(session, schema.fields, condition)
+
+    if schema.confirm_button_id:
+        session.find_by_id(schema.confirm_button_id).press()
 
 
 def _execute(session: SapSession, execute_action: str) -> None:

@@ -25,6 +25,7 @@ from excel_io.edit_rules import apply_edit_rules
 from lookup.hr_matcher import match_rows
 from sap_automation import control_config, session_picker, transaction_runner
 from sap_automation.control_config import (
+    AdditionalScreenSchema,
     ControlConfig,
     DownloadSchema,
     LayoutSchema,
@@ -72,10 +73,11 @@ def create_control(payload: dict[str, Any]) -> dict[str, Any]:
             sap=SapQuerySchema(
                 transaction=payload["transaction"],
                 fields=payload.get("fields", {}),
-                execute_action=payload.get("execute_action", "enter"),
+                execute_action=payload.get("execute_action", "f8"),
             ),
             download=DownloadSchema(**payload.get("download", {})),
             layout=LayoutSchema(**payload.get("layout", {})),
+            additional_screen=AdditionalScreenSchema(**payload.get("additional_screen", {})),
             edit_rules=payload.get("edit_rules", {}),
             validation=payload.get("validation", {}),
         )
