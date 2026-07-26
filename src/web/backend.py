@@ -24,15 +24,8 @@ from excel_io import reader, writer
 from excel_io.edit_rules import apply_edit_rules
 from lookup.hr_matcher import match_rows
 from sap_automation import control_config, session_picker, transaction_runner
-from sap_automation.control_config import (
-    ControlConfig,
-    DownloadSchema,
-    LayoutSchema,
-    SamplingSchema,
-    SapQuerySchema,
-)
+from sap_automation.control_config import ControlConfig, DownloadSchema, SapQuerySchema
 from validation.checks import classify_rows
-from validation.sampling import determine_sample_size, select_sample
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = BASE_DIR / "config" / "transactions"
@@ -76,10 +69,8 @@ def create_control(payload: dict[str, Any]) -> dict[str, Any]:
                 execute_action=payload.get("execute_action", "enter"),
             ),
             download=DownloadSchema(**payload.get("download", {})),
-            layout=LayoutSchema(**payload.get("layout", {})),
             edit_rules=payload.get("edit_rules", {}),
             validation=payload.get("validation", {}),
-            sampling=SamplingSchema(**payload.get("sampling", {})),
         )
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"필수 항목 누락: {exc}") from exc
@@ -199,9 +190,8 @@ def _make_execute_fn(config: ControlConfig, session_id: str, job_dir: Path):
         session = session_picker.attach(session_id)
         download_dir = job_dir / "downloads"
         result = transaction_runner.run_condition(session, config, condition, download_dir)
-        raw_rows = reader.read_conditions(result["downloaded_path"])
-        result["raw_rows"] = raw_rows
-        result["rows"] = apply_edit_rules(raw_rows, config.edit_rules)
+        rows = reader.read_conditions(result["downloaded_path"])
+        result["rows"] = apply_edit_rules(rows, config.edit_rules)
         return result
 
     return execute
@@ -222,39 +212,19 @@ def _make_mock_execute_fn(config: ControlConfig):
             "downloaded_path": None,
             "condition_capture": None,
             "result_capture": None,
-            "raw_rows": [row],
             "rows": rows,
         }
 
     return execute
 
 
-_CYCLE_LABELS = {
-    "annual": "연간",
-    "quarterly": "분기별",
-    "monthly": "월별",
-    "weekly": "주별",
-    "daily": "일별",
-}
-
-
-def _build_sampling_note(sampling: SamplingSchema, sample_size: int, population_count: int) -> str:
-    if sampling.control_type == "periodic":
-        basis = f"{_CYCLE_LABELS.get(sampling.cycle, sampling.cycle or '')} 통제"
-    else:
-        basis = f"모집단 {population_count}건 기준"
-    return f"{basis} 위험도 최대치 적용 {sample_size}건"
-
-
 def _finalize_result(config: ControlConfig, state: BatchState, job_dir: Path) -> None:
-    raw_all_rows: list[dict[str, Any]] = []
     all_rows: list[dict[str, Any]] = []
     captures: list[dict[str, Any]] = []
 
     for item in state.items:
         label = f"조건 {item.index + 1}"
         if item.status.value == "success" and item.result:
-            raw_all_rows.extend(item.result.get("raw_rows", []))
             all_rows.extend(item.result.get("rows", []))
             captures.append(
                 {
@@ -272,20 +242,6 @@ def _finalize_result(config: ControlConfig, state: BatchState, job_dir: Path) ->
         all_rows = match_rows(all_rows, hr_records, responsible_column)
 
     key_columns = config.validation.get("key_columns", [])
-    population_rows, exception_rows = classify_rows(all_rows, key_columns)
+    normal_rows, exception_rows = classify_rows(all_rows, key_columns)
 
-    sample_size = determine_sample_size(
-        config.sampling.control_type, config.sampling.cycle, len(population_rows)
-    )
-    sample_rows = select_sample(population_rows, sample_size)
-    sampling_note = _build_sampling_note(config.sampling, sample_size, len(population_rows))
-
-    writer.write_result_excel(
-        job_dir / "result.xlsx",
-        raw_all_rows,
-        population_rows,
-        sample_rows,
-        exception_rows,
-        captures,
-        sampling_note=sampling_note,
-    )
+    writer.write_result_excel(job_dir / "result.xlsx", normal_rows, exception_rows, captures)

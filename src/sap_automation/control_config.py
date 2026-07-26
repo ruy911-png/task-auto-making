@@ -35,52 +35,15 @@ class DownloadSchema:
 
 
 @dataclass
-class LayoutSchema:
-    """조회 실행 후, 엑셀 다운로드 전에 특정 레이아웃을 선택하는 단계 (통제별로 명기).
-
-    select_button_id가 없으면 레이아웃 선택 단계 자체를 건너뛴다 (레이아웃 선택이
-    필요 없는 통제도 있으므로 선택 사항으로 둔다).
-    """
-
-    select_button_id: str | None = None
-    """'레이아웃 선택'을 여는 버튼/메뉴의 컴포넌트 id."""
-    layout_name: str | None = None
-    """선택할 레이아웃의 이름/코드 (통제 등록 시 값으로 명기)."""
-    layout_name_field_id: str | None = None
-    """레이아웃 이름을 입력/선택하는 필드의 컴포넌트 id."""
-    confirm_button_id: str | None = None
-    """레이아웃 선택 확인 버튼의 컴포넌트 id."""
-
-
-PERIODIC_CYCLES = ("annual", "quarterly", "monthly", "weekly", "daily")
-
-
-@dataclass
-class SamplingSchema:
-    """표본 수 산정 기준 (내부회계관리제도 모범규준 적용 FAQ 기준, 위험도 상단 적용).
-
-    control_type이 "periodic"이면 cycle(연간/분기/월별/주별/일별)로 표본 수가 정해지고,
-    "event_driven"이면 실행 시점의 모집단 건수로 표본 수가 정해진다.
-    """
-
-    control_type: str = "event_driven"
-    """"periodic"(주기적 통제) 또는 "event_driven"(수시/비주기적 통제)."""
-    cycle: str | None = None
-    """control_type이 "periodic"일 때만 사용: annual/quarterly/monthly/weekly/daily."""
-
-
-@dataclass
 class ControlConfig:
     control_id: str
     description: str
     sap: SapQuerySchema
     download: DownloadSchema = field(default_factory=DownloadSchema)
-    layout: LayoutSchema = field(default_factory=LayoutSchema)
     edit_rules: dict[str, Any] = field(default_factory=dict)
     """rename_columns / drop_columns / filters / calculated_columns 지원 (excel_io.edit_rules 참고)."""
     validation: dict[str, Any] = field(default_factory=dict)
     """key_columns / amount_column 등 (validation.checks 참고)."""
-    sampling: SamplingSchema = field(default_factory=SamplingSchema)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,10 +51,8 @@ class ControlConfig:
             "description": self.description,
             "sap": asdict(self.sap),
             "download": asdict(self.download),
-            "layout": asdict(self.layout),
             "edit_rules": self.edit_rules,
             "validation": self.validation,
-            "sampling": asdict(self.sampling),
         }
 
     @classmethod
@@ -101,10 +62,8 @@ class ControlConfig:
             description=d.get("description", ""),
             sap=SapQuerySchema(**d["sap"]),
             download=DownloadSchema(**d.get("download", {})),
-            layout=LayoutSchema(**d.get("layout", {})),
             edit_rules=d.get("edit_rules", {}) or {},
             validation=d.get("validation", {}) or {},
-            sampling=SamplingSchema(**d.get("sampling", {})),
         )
 
 

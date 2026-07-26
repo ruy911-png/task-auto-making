@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from .control_config import ControlConfig, DownloadSchema, LayoutSchema
+from .control_config import ControlConfig, DownloadSchema
 
 
 class SapSession(Protocol):
@@ -47,8 +47,6 @@ def run_condition(
     condition_capture = capture_fn(f"{config.control_id}_condition") if capture_fn else None
 
     _execute(session, config.sap.execute_action)
-
-    _select_layout(session, config.layout)
 
     result_capture = capture_fn(f"{config.control_id}_result") if capture_fn else None
 
@@ -86,30 +84,10 @@ def _fill_fields(
 
 
 def _execute(session: SapSession, execute_action: str) -> None:
-    action = execute_action.lower() if isinstance(execute_action, str) else execute_action
-    if action == "enter":
+    if execute_action == "enter":
         session.find_by_id("wnd[0]").send_v_key(0)
-    elif action == "f8":
-        session.find_by_id("wnd[0]").send_v_key(8)
     else:
         session.find_by_id(execute_action).press()
-
-
-def _select_layout(session: SapSession, layout: LayoutSchema) -> None:
-    """조회 실행 후, 엑셀 다운로드 전에 통제별로 지정된 레이아웃을 선택한다.
-
-    select_button_id가 없으면 레이아웃 선택이 필요 없는 통제이므로 아무것도 하지 않는다.
-    """
-    if not layout.select_button_id:
-        return
-
-    session.find_by_id(layout.select_button_id).press()
-
-    if layout.layout_name_field_id and layout.layout_name:
-        session.find_by_id(layout.layout_name_field_id).text = layout.layout_name
-
-    if layout.confirm_button_id:
-        session.find_by_id(layout.confirm_button_id).press()
 
 
 def _download_excel(session: SapSession, download_schema: DownloadSchema, output_path: Path) -> None:

@@ -78,17 +78,12 @@ def test_edit_rules_concat():
 
 def test_writer_creates_sheets(tmp_path):
     output = tmp_path / "result.xlsx"
-    raw = [{"a": 1}, {"a": 2}]
-    population = [{"a": 1}]
-    sample = [{"a": 1}]
+    normal = [{"a": 1}]
     exception = [{"a": 2, "예외사유": "중복"}]
     captures = [{"label": "조건 1", "condition_capture": None, "result_capture": None}]
 
-    writer.write_result_excel(
-        output, raw, population, sample, exception, captures,
-        sampling_note="수시 통제 전수조사 적용",
-    )
+    writer.write_result_excel(output, normal, exception, captures)
 
     assert output.exists()
     sheets = pd.ExcelFile(output).sheet_names
-    assert sheets == ["캡처", "Raw data", "모집단 data", "샘플 data", "예외 data"]
+    assert sheets == ["결과", "예외", "캡처"]
