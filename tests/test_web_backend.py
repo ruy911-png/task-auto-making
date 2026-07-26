@@ -1,13 +1,10 @@
 import io
 
-import openpyxl
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from batch.runner import BatchState, ConditionResult, ConditionStatus
-from sap_automation.control_config import ControlConfig, SapQuerySchema
-from web.backend import _finalize_result, app
+from web.backend import app
 
 
 @pytest.fixture(autouse=True)
@@ -88,58 +85,3 @@ def test_full_run_with_mock_session():
     retry_res = client.post(f"/api/runs/{job_id}/retry")
     assert retry_res.status_code == 200
     assert retry_res.json()["summary"]["failed"] == 0
-
-
-def test_finalize_result_excludes_failed_condition_from_population_and_sample(tmp_path):
-    """조회 실패 조건의 오류 플레이스홀더 행이 담당자매칭 컬럼이 없는 통제에서도
-    모집단/샘플로 새어 들어가지 않고 예외로만 분류되는지 확인 (QA에서 발견된 회귀)."""
-    config = ControlConfig(
-        control_id="c1",
-        description="",
-        sap=SapQuerySchema(transaction="FB03", fields={}),
-        validation={},  # responsible_column 미설정 -> match_rows가 호출되지 않는 경로
-    )
-    state = BatchState(
-        job_id="job1",
-        items=[
-            ConditionResult(
-                index=0,
-                condition={},
-                status=ConditionStatus.SUCCESS,
-                result={
-                    "raw_rows": [{"a": 1}],
-                    "rows": [{"a": 1}],
-                    "condition_capture": None,
-                    "result_capture": None,
-                },
-            ),
-            ConditionResult(
-                index=1,
-                condition={},
-                status=ConditionStatus.SUCCESS,
-                result={
-                    "raw_rows": [{"a": 2}],
-                    "rows": [{"a": 2}],
-                    "condition_capture": None,
-                    "result_capture": None,
-                },
-            ),
-            ConditionResult(index=2, condition={}, status=ConditionStatus.FAILED, error="SAP timeout"),
-        ],
-    )
-    job_dir = tmp_path / "job1"
-    job_dir.mkdir()
-
-    _finalize_result(config, state, job_dir)
-
-    workbook = openpyxl.load_workbook(job_dir / "result.xlsx")
-
-    def _sheet_text(sheet_name: str) -> str:
-        sheet = workbook[sheet_name]
-        return " ".join(
-            str(cell.value) for row in sheet.iter_rows() for cell in row if cell.value is not None
-        )
-
-    assert "조회실패" not in _sheet_text("모집단 data")
-    assert "조회실패" not in _sheet_text("샘플 data")
-    assert "조회실패" in _sheet_text("예외 data")

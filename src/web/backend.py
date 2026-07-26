@@ -31,7 +31,7 @@ from sap_automation.control_config import (
     SamplingSchema,
     SapQuerySchema,
 )
-from validation.checks import EXCEPTION_REASON_COLUMN, classify_rows
+from validation.checks import classify_rows
 from validation.sampling import determine_sample_size, select_sample
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -250,7 +250,6 @@ def _finalize_result(config: ControlConfig, state: BatchState, job_dir: Path) ->
     raw_all_rows: list[dict[str, Any]] = []
     all_rows: list[dict[str, Any]] = []
     captures: list[dict[str, Any]] = []
-    failed_condition_rows: list[dict[str, Any]] = []
 
     for item in state.items:
         label = f"조건 {item.index + 1}"
@@ -265,12 +264,7 @@ def _finalize_result(config: ControlConfig, state: BatchState, job_dir: Path) ->
                 }
             )
         else:
-            # 조회 실패 조건은 정상 데이터가 아니므로 담당자매칭/모집단분류/표본추출
-            # 대상에서 제외하고, 바로 예외 목록으로 보낸다 (population/sample에 오류
-            # 메시지 행이 섞여 들어가는 것을 방지).
-            failed_condition_rows.append(
-                {"__조건__": label, EXCEPTION_REASON_COLUMN: "조회실패", "오류": item.error}
-            )
+            all_rows.append({"__조건실패__": label, "오류": item.error})
 
     responsible_column = config.validation.get("responsible_column")
     if responsible_column:
@@ -279,7 +273,6 @@ def _finalize_result(config: ControlConfig, state: BatchState, job_dir: Path) ->
 
     key_columns = config.validation.get("key_columns", [])
     population_rows, exception_rows = classify_rows(all_rows, key_columns)
-    exception_rows = exception_rows + failed_condition_rows
 
     sample_size = determine_sample_size(
         config.sampling.control_type, config.sampling.cycle, len(population_rows)
