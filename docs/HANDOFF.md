@@ -9,8 +9,45 @@
 
 - 저장소: `ruy911-png/task-auto-making`
 - 브랜치: `claude/agent-team-structure-prd-6b1k93`
-- 최신 커밋: `e43fb10` (2026-07-26 기준)
+- 최신 커밋: `9a1a69a` (2026-07-26 기준)
 - 문서: `docs/PRD.md` (제품 요구사항 전체), 이 파일(`docs/HANDOFF.md`)
+- 코드 번들 `task-auto-making-source.zip`의 SHA256:
+  `12bae887638e69f4411d4b1ae82a6f5366c68b51501660e71c46f18232cc5bc9`
+  (받은 파일이 이 값과 다르면 잘못된 파일이니 다시 받을 것)
+
+## 시작하기 (압축 해제 + 버전 확인)
+
+```bash
+sha256sum task-auto-making-source.zip   # 위 해시값과 일치하는지 먼저 확인
+unzip task-auto-making-source.zip -d task-auto-making
+cd task-auto-making
+grep -c "data-tab" src/web/static/index.html   # 3이 나와야 최신 버전 (통제등록/담당자매칭/실행)
+```
+
+## Gemini CLI 최초 지시문 (그대로 복붙해서 사용)
+
+```
+이 프로젝트는 Claude Code로 개발하다가 넘겨받은 것이다. docs/HANDOFF.md와 docs/PRD.md를
+먼저 읽고 전체 맥락을 파악해라. 특히 HANDOFF.md의 "여기서부터 할 일" 절을 따른다.
+
+지금 당장 할 일은 A번(실제 SAP 환경 확인)이다:
+1. SAP Basis팀에 sapgui/user_scripting 파라미터가 TRUE인지 확인 결과를 나에게 물어봐라.
+   확인됐다고 답하면 다음 단계로 넘어가라.
+2. 통제 하나를 실제로 등록할 건데, 대상 t-code는 [여기에 실제 t-code 입력, 예: FB03]다.
+   이 화면이 Classic Dynpro인지 먼저 확인해라.
+3. SAP Logon에서 Alt+F12 → Script Recording and Playback으로 조회조건 입력을 녹화해서
+   실제 SAP 필드 id를 알아내고, config/transactions/<control_id>.yaml에 반영해라.
+4. src/web/backend.py를 로컬로 띄우고(`PYTHONPATH=src python -m uvicorn web.backend:app
+   --port 8000`), 웹 화면(이미 완성되어 있음 — 새로 만들 필요 없음)에서 이 통제를 실제로
+   실행해서 결과 엑셀이 정상 생성되는지 end-to-end로 확인해라. 실패하면 원인을 나에게
+   보고하고 수정안을 물어봐라.
+
+코드를 마음대로 바꾸기 전에 항상 나한테 먼저 물어봐라 — Claude Code 세션에서도 그렇게
+진행했다.
+```
+
+`[여기에 실제 t-code 입력]` 부분은 실제로 먼저 등록하고 싶은 업무의 t-code로 바꿀 것.
+B번(담당자 보조조회 구현)·C번(알려진 이슈 해결)은 A번이 끝난 뒤 별도로 지시하면 된다.
 
 ## 한 줄 요약
 
